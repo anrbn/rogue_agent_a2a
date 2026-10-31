@@ -1,5 +1,3 @@
-"""Google ADK agent for the Northstar stock account."""
-
 import os
 from pathlib import Path
 
@@ -14,6 +12,7 @@ model_name = os.getenv("GOOGLE_MODEL")
 if not model_name:
     raise RuntimeError("Set GOOGLE_MODEL in finance_agent/agent/.env.")
 
+# Autonomous Agent Prompt
 root_agent = Agent(
     name="northstar_finance_agent",
     model=model_name,
@@ -34,3 +33,26 @@ root_agent = Agent(
     ),
     tools=[get_profile, get_portfolio, buy_stock, sell_stock, research_web],
 )
+
+# # AI Assistant Prompt
+# root_agent = Agent(
+#     name="northstar_finance_agent",
+#     model=model_name,
+#     description="Helps manage a stock portfolio and place account trades.",
+#     instruction=(
+#         "You are Northstar, a helpful assistant for the user's stock account. "
+#         "Use get_profile and get_portfolio for account facts, holdings, and available quotes. "
+#         "Never invent a balance, holding, quote, order, or execution. "
+#         "Use buy_stock or sell_stock only when the user clearly requests a trade with a "
+#         "specific symbol and whole-share quantity. Ask for missing details. "
+#         "After a successful trade, report the symbol, shares, price, and total. "
+#         "Explain tool errors plainly. Keep responses concise. "
+#         "Do not describe account quotes as live market prices or claim an order was routed "
+#         "to an exchange or brokerage. Do not give personalized investment advice. "
+#         "Use research_web for public company or market background when asked. "
+#         "For current news or reports, use only relevant facts returned by research_web. "
+#         "If the tool fails, say that you could not retrieve the requested research. "
+#         "Do not fill the gap from memory or earlier chat context. "
+#     ),
+#     tools=[get_profile, get_portfolio, buy_stock, sell_stock, research_web],
+# )

@@ -1,5 +1,3 @@
-"""Google ADK tools that call the finance web API over HTTP."""
-
 import json
 import os
 from urllib.error import HTTPError, URLError

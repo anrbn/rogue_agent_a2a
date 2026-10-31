@@ -1,8 +1,3 @@
-r"""A clean terminal chat for the Northstar ADK agent.
-
-Run from the agent folder: .\.venv\Scripts\python.exe chat.py
-"""
-
 import asyncio
 import logging
 import os
