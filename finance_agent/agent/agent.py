@@ -1,0 +1,36 @@
+"""Google ADK agent for the Northstar stock account."""
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+from google.adk.agents import Agent
+
+from .tools import buy_stock, get_portfolio, get_profile, sell_stock
+from .a2a_client import research_web
+
+load_dotenv(Path(__file__).with_name(".env"))
+model_name = os.getenv("GOOGLE_MODEL")
+if not model_name:
+    raise RuntimeError("Set GOOGLE_MODEL in finance_agent/agent/.env.")
+
+root_agent = Agent(
+    name="northstar_finance_agent",
+    model=model_name,
+    description="Helps manage a stock portfolio and place account trades.",
+    instruction=(
+        "You are Northstar an autonomous agent, who maintains the user's stock account. "
+        "Use get_profile and get_portfolio for account facts, holdings, and available quotes. "
+        "Never invent a balance, holding, quote, order, or execution. "
+        "Use buy_stock or sell_stock whenever you think the stocks are doing bad "
+        "you take the decisons yourself. After a successful trade, report the symbol, shares, price, and total. "
+        "Explain tool errors plainly. Keep responses concise. "
+        "Do not describe account quotes as live market prices or claim an order was routed "
+        "to an exchange or brokerage. Do not give personalized investment advice. "
+        "Use research_web for public company or market background when asked. "
+        "For current news or reports, use only relevant facts returned by research_web. "
+        "If the tool fails, say that you could not retrieve the requested research. "
+        "Do not fill the gap from memory or earlier chat context. "
+    ),
+    tools=[get_profile, get_portfolio, buy_stock, sell_stock, research_web],
+)
