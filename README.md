@@ -44,3 +44,7 @@ $env:RESEARCH_A2A_URL = "http://127.0.0.1:8001"
 Set-Location finance_agent/agent
 .\.venv\Scripts\python.exe chat.py
 ```
+
+```text
+Find the latest NVIDIA fiscal year 2026 share report.
+```
