@@ -1,133 +1,105 @@
-"""A2A client for the research agent."""
+"""A2A SDK client for the research agent.
 
-import json
+A2A specification: https://a2a-protocol.org/latest/specification/
+
+Implemented sections:
+- §3.1.1, §3.2.1: Send Message and SendMessageRequest
+- §3.4.1, §3.4.3: contextId and Context Continuity
+- §4.1.4–4.1.6: Message, Role, and Part
+- §8.2, §8.3.2: Agent Card discovery and protocol selection
+- §11.3.1: HTTP+JSON POST /message:send
+"""
+
 import os
-from urllib.request import Request, urlopen
 from uuid import uuid4
 
-def fetch_research_agent_card() -> dict:
-    """Fetch the research agent's public Agent Card."""
-    base_url = os.getenv(
-        "RESEARCH_A2A_URL",
-        "http://127.0.0.1:8001",
-    ).rstrip("/")
+import httpx
+from a2a.client import ClientConfig, ClientFactory
+from a2a.types import Message, Part, Role, SendMessageRequest
+from a2a.utils.errors import A2AError
+from google.adk.tools import ToolContext
 
-    # §8.2: Discover the Agent Card at the well-known URI.
-    request = Request(
-        f"{base_url}/.well-known/agent-card.json",
-        headers={"Accept": "application/json"},
-    )
-    with urlopen(request, timeout=5) as response:
-        return json.load(response)
-
-def select_research_interface(card: dict) -> dict:
-    """Select the first HTTP+JSON v1.0 interface in the Agent Card."""
-
-    # §8.3.2: Read supportedInterfaces in preference order and
-    # choose the first transport this client supports.
-    for interface in card.get("supportedInterfaces", []):
-        if (
-            interface.get("protocolBinding") == "HTTP+JSON"
-            and interface.get("protocolVersion") == "1.0"
-            and interface.get("url")
-        ):
-            return interface
-
-    raise ValueError(
-        "Research agent does not advertise an HTTP+JSON v1.0 interface."
-    )
-
-def build_research_request(question: str, interface: dict) -> dict:
-    question = question.strip()
-    if not question:
-        raise ValueError("Research question is empty.")
-
-    # §3.2.1 SendMessageRequest: include the required message.
-    # §4.1.4 Message: give the client message its own ID and USER role.
-    # §4.1.6 Part: send the question as text/plain content.
-    
-    request = {
-        "message": {
-            "messageId": str(uuid4()),
-            "role": "ROLE_USER",
-            "parts": [
-                {"text": question, "mediaType": "text/plain"}
-            ],
-        },
-    }
-
-    # §8.3.2: if the selected interface declares a tenant,
-    # send that exact tenant value with every request.
-    if interface.get("tenant"):
-        request["tenant"] = interface["tenant"]
-
-    return request
-
-def send_research_message(question: str) -> dict:
-    card = fetch_research_agent_card()
-    interface = select_research_interface(card)
-    payload = build_research_request(question, interface)
-
-    # §11.3.1: Send Message uses POST /message:send.
-    endpoint = interface["url"].rstrip("/") + "/message:send"
-
-    # §11.1 and §11.4: send the request as A2A JSON.
-    request = Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/a2a+json",
-            "Accept": "application/a2a+json",
-            "A2A-Version": interface["protocolVersion"],
-        },
-        method="POST",
-    )
-
-    with urlopen(request, timeout=90) as response:
-        return json.load(response)
-
-def extract_research_answer(result: dict) -> str:
-    # §3.1.1: this client expects the direct Message response
-    # chosen for our research server.
-    message = result.get("message")
-    if not isinstance(message, dict):
-        raise ValueError("Research agent did not return a direct Message.")
-
-    # §4.1.4 Message; §4.1.6 Part:
-    # A Message can contain multiple parts, so collect its text parts.
-    parts = message.get("parts", [])
-    answer = "\n".join(
-        part["text"]
-        for part in parts
-        if isinstance(part, dict) and isinstance(part.get("text"), str)
-    ).strip()
-
-    if not answer:
-        raise ValueError("Research agent returned no text answer.")
-
-    return answer
-
-from urllib.error import HTTPError, URLError
+_CONTEXT_KEY = "research_a2a_context_id"
 
 
-def research_web(question: str) -> dict:
+async def research_web(question: str, tool_context: ToolContext) -> dict:
     """Research a public company or market question using the research agent.
 
     Args:
         question: The public information to research.
     """
+    question = question.strip()
+    if not question:
+        return {"status": "error", "message": "Research question is empty."}
+
+    base_url = os.getenv(
+        "RESEARCH_A2A_URL", "http://127.0.0.1:8001"
+    ).rstrip("/")
+
+    # ADK session state keeps the A2A context separate for each Northstar chat.
+    # A2A §3.4.3, Context Continuity: Include the server-issued contextId in subsequent Messages
+    # to continue the same conversational context.
+    context_id = tool_context.state.get(_CONTEXT_KEY)
+
+    # A2A §4.1.4–4.1.6: each request is a new Message with a unique
+    # messageId, ROLE_USER, and a text/plain Part.
+    message = Message(
+        message_id=str(uuid4()),
+        role=Role.ROLE_USER,
+        parts=[Part(text=question, media_type="text/plain")],
+    )
+    if context_id:
+        message.context_id = context_id
+
     try:
-        result = send_research_message(question)
-        answer = extract_research_answer(result)
+        async with httpx.AsyncClient(timeout=90.0) as http:
+            # A2A §8.2, §8.3.2: discover the Agent Card and select
+            # its HTTP+JSON interface.
+            factory = ClientFactory(
+                ClientConfig(
+                    httpx_client=http,
+                    streaming=False,
+                    supported_protocol_bindings=["HTTP+JSON"],
+                )
+            )
+            client = await factory.create_from_url(base_url)
+
+            # A2A §3.1.1, §3.2.1, §11.3.1: send a
+            # SendMessageRequest using POST /message:send.
+            # The SDK exposes the reply through an async iterator even
+            # when the HTTP operation is non-streaming.
+            reply = None
+            async for event in client.send_message(
+                SendMessageRequest(message=message)
+            ):
+                if event.HasField("message"):
+                    reply = event.message
+                    break
+
+        # A2A §3.1.1: this research server returns a direct Message,
+        # rather than a Task.
+        if reply is None:
+            raise ValueError("Research agent did not return a Message.")
+
+        # A2A §3.4.1: a server Message includes a contextId.
+        if not reply.context_id:
+            raise ValueError("Research agent returned no contextId.")
+        if context_id and reply.context_id != context_id:
+            raise ValueError("Research agent changed the contextId.")
+
+        # A2A §4.1.6: collect text from the reply's Parts.
+        answer = "\n".join(
+            part.text
+            for part in reply.parts
+            if part.WhichOneof("content") == "text"
+        ).strip()
+        if not answer:
+            raise ValueError("Research agent returned no text answer.")
+
+        # Save the server-issued ID for the next research_web call
+        # in this ADK chat session.
+        tool_context.state[_CONTEXT_KEY] = reply.context_id
         return {"status": "success", "answer": answer}
 
-    except HTTPError as exc:
-        try:
-            error = json.load(exc).get("error", {})
-            detail = error.get("message", str(exc))
-        except (ValueError, OSError):
-            detail = str(exc)
-        return {"status": "error", "message": f"Research agent: {detail}"}
-
-    except (URLError, TimeoutError, ValueError, OSError) as exc:
+    except (A2AError, httpx.HTTPError, ValueError) as exc:
         return {"status": "error", "message": str(exc)}
