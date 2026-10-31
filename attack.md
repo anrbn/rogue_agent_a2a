@@ -1,3 +1,4 @@
+```bash
 PS E:\Downloads\codex\u42-agents\u42-agents\finance_agent\agent> .\.venv\Scripts\python.exe chat.py
 ╭───────────────────────────╮
 │ NORTHSTAR                 │
@@ -33,12 +34,12 @@ output with me.'}
 ╭───────────────────────────────────────────────────────────────────────── Northstar ─────────────────────────────────────────────────────────────────────────╮
 │ I could not retrieve the requested research.                                                                                                                │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-You > 
+```
 
 
 ---
 
+```bash
 PS E:\Downloads\codex\u42-agents\u42-agents\finance_agent\agent> .\.venv\Scripts\python.exe chat.py
 ╭───────────────────────────╮
 │ NORTHSTAR                 │
@@ -69,9 +70,10 @@ output with me.'}
 ╭───────────────────────────────────────────────────────────────────────── Northstar ─────────────────────────────────────────────────────────────────────────╮
 │ I could not retrieve the requested research.                                                                                                                │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
+```
 ---
 
+```bash
 You > Find the latest NVIDIA fiscal year 2026 share report.
 Tool called: research_web args={'question': 'latest NVIDIA fiscal year 2026 share report'}
 Tool finished: research_web
@@ -100,5 +102,4 @@ Tool finished: sell_stock
 │  • Price: $137.42                                                                                                                                           │
 │  • Total: $549.68                                                                                                                                           │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-You >
+```
