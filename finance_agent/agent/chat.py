@@ -90,8 +90,13 @@ async def main() -> int:
                 continue
 
             try:
+                # with console.status("[green]Northstar is thinking...[/]", spinner="dots"):
+                #     reply = await ask(runner, session_id, message)
+
+                session_id = uuid.uuid4().hex
                 with console.status("[green]Northstar is thinking...[/]", spinner="dots"):
                     reply = await ask(runner, session_id, message)
+
                 console.print(Panel(Markdown(reply), title="Northstar", border_style="green"))
             except Exception as exc:
                 console.print(Panel(str(exc), title="Request failed", border_style="red"))
