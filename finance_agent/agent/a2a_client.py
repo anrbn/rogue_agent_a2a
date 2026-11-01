@@ -4,10 +4,14 @@ A2A specification: https://a2a-protocol.org/latest/specification/
 
 Implemented sections:
 - §3.1.1, §3.2.1: Send Message and SendMessageRequest
-- §3.4.1, §3.4.3: contextId and Context Continuity
 - §4.1.4–4.1.6: Message, Role, and Part
 - §8.2, §8.3.2: Agent Card discovery and protocol selection
 - §11.3.1: HTTP+JSON POST /message:send
+
+Deliberately session-less: §4.1.4 makes contextId optional on client
+messages, so every call is a self-contained first contact. The reply's
+context_id is checked for presence (required on server messages) and
+then discarded; nothing is persisted between research_web calls.
 """
 
 import os
@@ -17,12 +21,9 @@ import httpx
 from a2a.client import ClientConfig, ClientFactory
 from a2a.types import Message, Part, Role, SendMessageRequest
 from a2a.utils.errors import A2AError
-from google.adk.tools import ToolContext
-
-_CONTEXT_KEY = "research_a2a_context_id"
 
 
-async def research_web(question: str, tool_context: ToolContext) -> dict:
+async def research_web(question: str) -> dict:
     """Research a public company or market question using the research agent.
 
     Args:
@@ -36,20 +37,15 @@ async def research_web(question: str, tool_context: ToolContext) -> dict:
         "RESEARCH_A2A_URL", "http://127.0.0.1:8001"
     ).rstrip("/")
 
-    # ADK session state keeps the A2A context separate for each Northstar chat.
-    # A2A §3.4.3, Context Continuity: Include the server-issued contextId in subsequent Messages
-    # to continue the same conversational context.
-    context_id = tool_context.state.get(_CONTEXT_KEY)
-
     # A2A §4.1.4–4.1.6: each request is a new Message with a unique
-    # messageId, ROLE_USER, and a text/plain Part.
+    # messageId, ROLE_USER, and a text/plain Part. No contextId is set:
+    # §4.1.4 marks it optional for client messages, so each call starts
+    # a fresh context and the server mints a new one (§3.4.1).
     message = Message(
         message_id=str(uuid4()),
         role=Role.ROLE_USER,
         parts=[Part(text=question, media_type="text/plain")],
     )
-    if context_id:
-        message.context_id = context_id
 
     try:
         async with httpx.AsyncClient(timeout=90.0) as http:
@@ -81,11 +77,11 @@ async def research_web(question: str, tool_context: ToolContext) -> dict:
         if reply is None:
             raise ValueError("Research agent did not return a Message.")
 
-        # A2A §3.4.1: a server Message includes a contextId.
+        # A2A §4.1.4: a server Message must carry a contextId. It is
+        # validated and discarded; a different value on every call is
+        # expected, since each request started a fresh context.
         if not reply.context_id:
             raise ValueError("Research agent returned no contextId.")
-        if context_id and reply.context_id != context_id:
-            raise ValueError("Research agent changed the contextId.")
 
         # A2A §4.1.6: collect text from the reply's Parts.
         answer = "\n".join(
@@ -96,9 +92,6 @@ async def research_web(question: str, tool_context: ToolContext) -> dict:
         if not answer:
             raise ValueError("Research agent returned no text answer.")
 
-        # Save the server-issued ID for the next research_web call
-        # in this ADK chat session.
-        tool_context.state[_CONTEXT_KEY] = reply.context_id
         return {"status": "success", "answer": answer}
 
     except (A2AError, httpx.HTTPError, ValueError) as exc:
